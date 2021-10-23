@@ -12,13 +12,24 @@ import android.widget.DatePicker;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import com.example.astroid_neostats.model.AstroidNeoData;
+
+import java.security.cert.CertificateException;
 import java.text.DateFormat;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
 
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
+
 import okhttp3.Headers;
+import okhttp3.OkHttpClient;
 import retrofit2.Call;
 import retrofit2.Callback;
 import retrofit2.Response;
@@ -75,8 +86,6 @@ public class MainActivity extends AppCompatActivity {
                         new DatePickerDialog.OnDateSetListener() {
                             @Override
                             public void onDateSet(DatePicker view, int year, int monthOfYear, int dayOfMonth) {
-//                                Long minDate = Long.parseLong(startDateText.getText().toString());
-//                                view.setMinDate(minDate);
                                 endDateText.setText(year + "-" + (monthOfYear + 1) + "-" + dayOfMonth);
                                 endDateStatus = true;
                             }
@@ -93,12 +102,14 @@ public class MainActivity extends AppCompatActivity {
                 if (startDateStatus && endDateStatus) {
                     dateTextView.setText("https://api.nasa.gov/neo/rest/v1/feed?start_date=" + startDateText.getText() +
                             "&end_date=" + endDateText.getText() + "&api_key=DEMO_KEY");
-                    Retrofit retrofit = new Retrofit.Builder().baseUrl("https://api.nasa.gov").addConverterFactory(GsonConverterFactory.create()).build();
+                    Retrofit retrofit = new Retrofit.Builder().baseUrl("https://api.nasa.gov").client(getUnsafeOkHttpClient().build())
+                            .build();;
                     AstroidNeoStatInterface service = retrofit.create(AstroidNeoStatInterface.class);
-                    service.getAstroidData(startDateText.getText().toString(),endDateText.getText().toString(),"DEMO_KEY")
-                            .enqueue(new Callback<List<NeoData>>() {
+                    service.getAstroidData("feed?start_date=" + startDateText.getText() +
+                            "&end_date=" + endDateText.getText() + "&api_key=DEMO_KEY")
+                            .enqueue(new Callback<List<AstroidNeoData>>() {
                                 @Override
-                                public void onResponse(Call<List<NeoData>> call, Response<List<NeoData>> response) {
+                                public void onResponse(Call<List<AstroidNeoData>> call, Response<List<AstroidNeoData>> response) {
                                     if(!response.isSuccessful()){
 
                                         if (response.code() == 403) {
@@ -135,16 +146,57 @@ public class MainActivity extends AppCompatActivity {
                                 }
 
                                 @Override
-                                public void onFailure(Call<List<NeoData>> call, Throwable t) {
+                                public void onFailure(Call<List<AstroidNeoData>> call, Throwable t) {
                                     Log.i(TAG, "onFailure: "+t.getLocalizedMessage());
                                 }
                             });
-
-
                 } else {
                     dateTextView.setText("Select StartDate and EndDate");
                 }
             }
         });
+
+
+    }
+
+    public static OkHttpClient.Builder getUnsafeOkHttpClient() {
+        try {
+            // Create a trust manager that does not validate certificate chains
+            final TrustManager[] trustAllCerts = new TrustManager[]{
+                    new X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {
+                        }
+
+                        @Override
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) throws CertificateException {
+                        }
+
+                        @Override
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                            return new java.security.cert.X509Certificate[]{};
+                        }
+                    }
+            };
+
+            // Install the all-trusting trust manager
+            final SSLContext sslContext = SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+
+            // Create an ssl socket factory with our all-trusting manager
+            final SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+            OkHttpClient.Builder builder = new OkHttpClient.Builder();
+            builder.sslSocketFactory(sslSocketFactory, (X509TrustManager) trustAllCerts[0]);
+            builder.hostnameVerifier(new HostnameVerifier() {
+                @Override
+                public boolean verify(String hostname, SSLSession session) {
+                    return true;
+                }
+            });
+            return builder;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
